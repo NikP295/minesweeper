@@ -33,7 +33,7 @@ impl eframe::app for sweeper_of_mines {
         egui::CentralPanel::default().show(ctx, |ui| {
             let size_display:i32 = self.grid_size;
             ui.heading("Minesweeper: {}x{}", size_display, size_display);
-            // left of here
+            // left off here
         });
     }
 }
