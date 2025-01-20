@@ -59,13 +59,11 @@ impl Begin for SweeperOfMines {
 
 impl SweeperOfMines {
     fn what_to_display(&mut self, coords:(usize, usize)) -> char {
+        let value_on_square:i32 = self.grid[coords.0][coords.1];
+
         if self.display_grid[coords.0][coords.1] {
-            let value_on_square:i32 = self.grid[coords.0][coords.1];
             if value_on_square <= 8 {
                 return (value_on_square as u8 + b'0') as char;
-            }
-            if value_on_square >= 20 {
-                return 'F';
             }
             if value_on_square == 10 {
                 return 'B';
@@ -74,6 +72,11 @@ impl SweeperOfMines {
                 return '?';
             }
         }
+
+        else if value_on_square >= 20 {
+            return 'F';
+        }
+
         else {
             return ' ';
         }
@@ -93,13 +96,13 @@ impl SweeperOfMines {
 
         // user click handling
         if user_click {
-            if !self.display_grid[coords.0][coords.1] {
+            if !self.display_grid[coords.0][coords.1] && self.grid[coords.0][coords.1] <= 10 {
                 self.display_grid[coords.0][coords.1] = true;
                 if self.grid[coords.0][coords.1] == 10 {
                     self.playing_status = false;
                 }
             }
-            else {
+            else if self.grid[coords.0][coords.1] <= 10 {
                 mins_and_maxes = space_around_coord(coords.0, coords.1, grid_size);
                 r_min = mins_and_maxes[0];
                 c_min = mins_and_maxes[1];
@@ -144,6 +147,23 @@ impl SweeperOfMines {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+impl SweeperOfMines {
+    fn set_flag(&mut self, coords:(usize, usize)) {
+        //check if square is shown
+        if self.display_grid[coords.0][coords.1] {
+            //nothing
+        }
+        else {
+            if self.grid[coords.0][coords.1] <= 10 {
+                self.grid[coords.0][coords.1] += 20;
+            }
+            else if self.grid[coords.0][coords.1] >= 20 {
+                self.grid[coords.0][coords.1] -= 20;
             }
         }
     }
@@ -211,14 +231,23 @@ impl eframe::App for SweeperOfMines {
                     ui.horizontal(|ui| {
 
                         for col in 0..size_display {
-                            let button = ui.button(format!("            \n    {}    \n            ", self.what_to_display((row as usize, col as usize))));
-                            if button.clicked() {
+                            let response = ui.button((format!("            \n    {}    \n            ", self.what_to_display((row as usize, col as usize)))));
+
+                            if response.clicked() {
                                 self.adjacent_changes((row as usize, col as usize), true);
-                                //println!("Tile at {},{} clicked!", row, col);
                             }
-                            else if button.interact(egui::Sense::click()) {
-                                println!("Right click on {},{}", row, col);
+                            else if response.secondary_clicked() {
+                                self.set_flag((row as usize, col as usize));
                             }
+
+                            // let button = ui.button(format!("            \n    {}    \n            ", self.what_to_display((row as usize, col as usize))));
+                            // if button.clicked() {
+                            //     self.adjacent_changes((row as usize, col as usize), true);
+                            //     //println!("Tile at {},{} clicked!", row, col);
+                            // }
+                            // else if button.interact(egui::Sense::click()) {
+                            //     println!("Right click on {},{}", row, col);
+                            // }
                         }
                     });
                 }
