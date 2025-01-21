@@ -1,7 +1,9 @@
 use eframe::egui;
 //use std::io;
-use rand::prelude::*;
 
+
+// TO ADD:
+// - victory condition
 
 
 fn main() {
@@ -25,11 +27,12 @@ struct SweeperOfMines{
     bomb_locations:Vec<(usize, usize)>,
     grid:Vec<Vec<i32>>,
     display_grid:Vec<Vec<bool>>,
-    playing_status:bool
+    playing_status:bool,
+    bombs_to_cover: i32
 }
 
 trait Begin {
-    fn begin(size:i32) -> Self;
+    fn begin(size: i32) -> Self;
 }
 
 impl Begin for SweeperOfMines {
@@ -52,74 +55,162 @@ impl Begin for SweeperOfMines {
             grid,
             bomb_locations,
             display_grid,
-            playing_status: true
+            playing_status: true,
+            bombs_to_cover: bomb_num
         }
     }
 }
 
 impl SweeperOfMines {
-    fn what_to_display(&mut self, coords:(usize, usize)) -> char {
+    fn restart(&mut self, size: i32) {
+        self.bomb_num = match size {
+            8 => 10,
+            16 => 40,
+            32 => 99,
+            _ => 10
+        };
+
+        self.grid_size = size;
+        self.grid = vec![vec![0; size as usize]; size as usize];
+        self.display_grid = vec![vec![false; size as usize]; size as usize];
+        self.bomb_locations = bomb_locations(self.bomb_num, size);
+        self.bombs_to_cover = self.bomb_num;
+        self.playing_status = true;
+        self.adjacent_changes((0,0), false);
+    }
+}
+
+
+impl SweeperOfMines {
+    fn what_to_display(&mut self, coords:(usize, usize)) -> (char, (u8, u8, u8)) {
         let value_on_square:i32 = self.grid[coords.0][coords.1];
+        let mut character:char;
+        //println!("The num on the square: {}",value_on_square);
 
         if self.display_grid[coords.0][coords.1] {
             if value_on_square <= 8 {
-                return (value_on_square as u8 + b'0') as char;
+                character = (value_on_square as u8 + b'0') as char;
             }
-            if value_on_square == 10 {
-                return 'B';
+            else if value_on_square == 10 {
+                character = 'B';
             }
             else {
-                return '?';
+                character = 'A';
             }
         }
 
         else if value_on_square >= 20 {
-            return 'F';
+            character = 'F';
         }
 
         else {
-            return ' ';
+            character = ' ';
+        }
+
+        let rgb:(u8, u8, u8) = match &character {
+            '0' => (77, 77, 77),
+            '1' => (125, 215, 208),
+            '2' => (240, 125, 65),
+            '3' => (230, 75, 35),
+            '4' => (110, 12, 175),
+            '5' => (185, 2, 15),
+            '6' => (145, 2, 185),
+            '7' => (185, 240, 70),
+            '8' => (20, 15, 210),
+            'B' => (255, 0, 25),
+            'F' => (95, 95, 95),
+            ' ' => (15, 20, 70),
+            _ => (252, 252, 252)
+        };
+
+        return (character, rgb);
+    }
+}
+
+impl SweeperOfMines {
+    fn show_bombs_fail(&mut self) {
+        for bomb in &self.bomb_locations {
+            self.display_grid[bomb.0][bomb.1] = true;
         }
     }
 }
 
-// OK SOOO! NOTE! i can add a number to a bomb square to mark it as flagged, and then remove the number if the player unflags the square... easy dub fr
-
 impl SweeperOfMines {
     fn adjacent_changes(&mut self, coords:(usize, usize), user_click:bool) {
-        let mut mins_and_maxes:Vec<usize>;
         let mut r_min:usize;
         let mut c_min:usize;
         let mut r_max:usize;
         let mut c_max:usize;
-        let grid_size:usize = (self.grid_size - 1) as usize; 
+
+        let mut mins_and_maxes:Vec<usize>;
+        let grid_size:usize = (self.grid_size - 1) as usize;
+
+        let mut new_x:usize;
+        let mut new_y:usize;
+        let mut stop_loop:bool = true;
+        let mut coord_x:usize = coords.0;
+        let mut coord_y:usize = coords.1;
+        let mut new_x:usize;
+        let mut new_y:usize;
+        let mut coords_of_zeroes:Vec<(usize, usize)> = vec![(0,0)];
+        let mut zero_indexes:usize = 0;
 
         // user click handling
         if user_click {
-            if !self.display_grid[coords.0][coords.1] && self.grid[coords.0][coords.1] <= 10 {
-                self.display_grid[coords.0][coords.1] = true;
-                if self.grid[coords.0][coords.1] == 10 {
-                    self.playing_status = false;
+            loop {
+                if !stop_loop {
+                    if zero_indexes < coords_of_zeroes.len() - 1 {
+                        zero_indexes += 1;
+                        coord_x = coords_of_zeroes[zero_indexes].0;
+                        coord_y = coords_of_zeroes[zero_indexes].1;
+                    }
+                    else {
+                        stop_loop = true;
+                    }
                 }
-            }
-            else if self.grid[coords.0][coords.1] <= 10 {
-                mins_and_maxes = space_around_coord(coords.0, coords.1, grid_size);
-                r_min = mins_and_maxes[0];
-                c_min = mins_and_maxes[1];
-                r_max = mins_and_maxes[2];
-                c_max = mins_and_maxes[3];
-    
-                for x in r_min..=r_max {
-                    for y in c_min..=c_max {
+                if !self.display_grid[coord_x][coord_y] && self.grid[coord_x][coord_y] <= 10 {
+                    self.display_grid[coord_x][coord_y] = true;
+                    if self.grid[coord_x][coord_y] == 10 {
+                        self.playing_status = false;
+                        self.show_bombs_fail();
+                    }
+                    if self.grid[coord_x][coord_y] == 0 {
+                        if !coords_of_zeroes.contains(&(coord_x, coord_y)){
+                            coords_of_zeroes.push((coord_x, coord_y));
+                            stop_loop = false;
+                        }
+                    }
+                }
+                else if self.grid[coord_x][coord_y] <= 10 {
+                    mins_and_maxes = space_around_coord(coord_x, coord_y, grid_size);
+                    r_min = mins_and_maxes[0];
+                    c_min = mins_and_maxes[1];
+                    r_max = mins_and_maxes[2];
+                    c_max = mins_and_maxes[3];
+        
+                    for x in r_min..=r_max {
+                        for y in c_min..=c_max {
 
-                        if self.grid[x][y] <= 10 {
-                            self.display_grid[x][y] = true;
+                            if self.grid[x][y] <= 10 {
+                                self.display_grid[x][y] = true;
 
-                            if self.grid[x][y] == 10 {
-                                self.playing_status = false;
+                                if self.grid[x][y] == 10 {
+                                    self.playing_status = false;
+                                    self.show_bombs_fail();
+                                }
+                                // conintue revealing
+                                else if self.grid[x][y] == 0 {
+                                    if !coords_of_zeroes.contains(&(x, y)){
+                                        coords_of_zeroes.push((x, y));
+                                        stop_loop = false;
+                                    }
+                                }
                             }
                         }
                     }
+                }
+                if stop_loop {
+                    break;
                 }
             }
         }
@@ -161,9 +252,11 @@ impl SweeperOfMines {
         else {
             if self.grid[coords.0][coords.1] <= 10 {
                 self.grid[coords.0][coords.1] += 20;
+                self.bombs_to_cover -= 1;
             }
             else if self.grid[coords.0][coords.1] >= 20 {
                 self.grid[coords.0][coords.1] -= 20;
+                self.bombs_to_cover += 1;
             }
         }
     }
@@ -198,14 +291,13 @@ fn space_around_coord(row:usize, col:usize, end_num:usize) -> Vec<usize> {
         col_max = end_num;
     }
 
-
     return vec![row_min, col_min, row_max, col_max];
-
 }
 
 
 
 fn bomb_locations(number_to_place:i32, max_index:i32) -> Vec<(usize, usize)> {
+    use rand::prelude::*;
     let mut rng = rand::thread_rng();
     let mut locations = Vec::new();
     let mut current_coords:(usize, usize);
@@ -220,34 +312,75 @@ fn bomb_locations(number_to_place:i32, max_index:i32) -> Vec<(usize, usize)> {
 }
 
 
+fn options_bar(ui: &mut egui::Ui) -> u8 {
+    let mut option:u8 = 0;
+    egui::TopBottomPanel::bottom("bottom_bar").show(ui.ctx(), |ui| {
+        ui.horizontal(|ui| {
+            if ui.button("Restart").clicked() {
+                option = 1;
+            }
+            else if ui.button("8X8").clicked() {
+                option = 2;
+            }
+            else if ui.button("16X16").clicked() {
+                option = 3;
+            }
+            else if ui.button("32X32").clicked() {
+                option = 4;
+            }
+        });
+    });
+    return option;
+}
+
 impl eframe::App for SweeperOfMines {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            let option_clicked = options_bar(ui);
+            
+            if option_clicked == 1 {
+                self.restart(self.grid_size);
+            }
+            else if option_clicked == 2 {
+                self.restart(8);
+            }
+            else if option_clicked == 3 {
+                self.restart(16);
+            }
+            else if option_clicked == 4 {
+                self.restart(32);
+            }
+
             let size_display:i32 = self.grid_size;
-            ui.heading(format!("Minesweeper: {}x{}", size_display, size_display));
+            ui.heading(format!("Minesweeper: {}x{};\tBombs to cover:{};\tAlive?: {}", size_display, size_display, self.bombs_to_cover, self.playing_status));
 
             ui.vertical(|ui| {
                 for row in 0..size_display {
                     ui.horizontal(|ui| {
 
                         for col in 0..size_display {
-                            let response = ui.button((format!("            \n    {}    \n            ", self.what_to_display((row as usize, col as usize)))));
+                            
+                            let display_info = self.what_to_display((row as usize, col as usize));
+                            let text_char:char = display_info.0;
+                            let colors:(u8, u8, u8) = display_info.1;
+                            let color_r:u8 = colors.0;
+                            let color_g:u8 = colors.1;
+                            let color_b:u8 = colors.2;
 
-                            if response.clicked() {
-                                self.adjacent_changes((row as usize, col as usize), true);
-                            }
-                            else if response.secondary_clicked() {
-                                self.set_flag((row as usize, col as usize));
+                            let response = ui.add(egui::Button::new(format!("            \n    {}    \n            ", text_char))
+                            .fill(egui::Color32::from_rgb(color_r, color_g, color_b)));
+                            
+                            if self.playing_status {
+                                if response.clicked(){
+                                    self.adjacent_changes((row as usize, col as usize), true);
+                                    println!("Click triggered!");
+                                }
+                                else if response.secondary_clicked() {
+                                    self.set_flag((row as usize, col as usize));
+                                    println!("Right click triggered!");
+                                }
                             }
 
-                            // let button = ui.button(format!("            \n    {}    \n            ", self.what_to_display((row as usize, col as usize))));
-                            // if button.clicked() {
-                            //     self.adjacent_changes((row as usize, col as usize), true);
-                            //     //println!("Tile at {},{} clicked!", row, col);
-                            // }
-                            // else if button.interact(egui::Sense::click()) {
-                            //     println!("Right click on {},{}", row, col);
-                            // }
                         }
                     });
                 }
