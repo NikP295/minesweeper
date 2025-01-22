@@ -1,14 +1,8 @@
 use eframe::egui;
-//use std::io;
 
-
-// TO ADD:
-// - victory condition
 
 
 fn main() {
-    //println!("Runs");
-    //io::stdin().readline(&mut usr_input).expect("Failed to read the user input!");
     let window_options = eframe::NativeOptions::default();
     let x = 8;
     let mut game_instance = SweeperOfMines::begin(x);
@@ -20,15 +14,14 @@ fn main() {
     );
 }
 
-
 struct SweeperOfMines{
     bomb_num:i32,
     grid_size:i32,
     bomb_locations:Vec<(usize, usize)>,
-    grid:Vec<Vec<i32>>,
-    display_grid:Vec<Vec<bool>>,
+    grid:Vec<Vec<i32>>,    //expected data is: 0-8 for nearby bombs, 10 for actual bomb, 120-130 for flagged positions, 100-110 for shown revealed positions
     playing_status:bool,
-    bombs_to_cover: i32
+    bombs_to_cover: i32,
+    victory_status:bool,
 }
 
 trait Begin {
@@ -43,10 +36,8 @@ impl Begin for SweeperOfMines {
             32 => 99,
             _ => 10
         };
-        let mut grid = vec![vec![0; size as usize]; size as usize];
 
-        let mut display_grid = vec![vec![false; size as usize]; size as usize];
-
+        let grid = vec![vec![0; size as usize]; size as usize];
         let bomb_locations = bomb_locations(bomb_num, size);
 
         SweeperOfMines {
@@ -54,8 +45,8 @@ impl Begin for SweeperOfMines {
             bomb_num,
             grid,
             bomb_locations,
-            display_grid,
             playing_status: true,
+            victory_status: false,
             bombs_to_cover: bomb_num
         }
     }
@@ -72,10 +63,10 @@ impl SweeperOfMines {
 
         self.grid_size = size;
         self.grid = vec![vec![0; size as usize]; size as usize];
-        self.display_grid = vec![vec![false; size as usize]; size as usize];
         self.bomb_locations = bomb_locations(self.bomb_num, size);
         self.bombs_to_cover = self.bomb_num;
         self.playing_status = true;
+        self.victory_status = false;
         self.adjacent_changes((0,0), false);
     }
 }
@@ -83,11 +74,18 @@ impl SweeperOfMines {
 
 impl SweeperOfMines {
     fn what_to_display(&mut self, coords:(usize, usize)) -> (char, (u8, u8, u8)) {
-        let value_on_square:i32 = self.grid[coords.0][coords.1];
+        let mut value_on_square:i32 = self.grid[coords.0][coords.1];
+        let mut display_char:bool = false;
+        if value_on_square >= 100 {
+            value_on_square -= 100;
+            if value_on_square < 20 {
+                display_char = true;
+            }
+        }
         let mut character:char;
-        //println!("The num on the square: {}",value_on_square);
+        
 
-        if self.display_grid[coords.0][coords.1] {
+        if display_char {
             if value_on_square <= 8 {
                 character = (value_on_square as u8 + b'0') as char;
             }
@@ -130,7 +128,10 @@ impl SweeperOfMines {
 impl SweeperOfMines {
     fn show_bombs_fail(&mut self) {
         for bomb in &self.bomb_locations {
-            self.display_grid[bomb.0][bomb.1] = true;
+            if self.grid[bomb.0][bomb.1] < 100 {
+                self.grid[bomb.0][bomb.1] += 100;
+            }
+            
         }
     }
 }
@@ -168,20 +169,24 @@ impl SweeperOfMines {
                         stop_loop = true;
                     }
                 }
-                if !self.display_grid[coord_x][coord_y] && self.grid[coord_x][coord_y] <= 10 {
-                    self.display_grid[coord_x][coord_y] = true;
-                    if self.grid[coord_x][coord_y] == 10 {
+
+                // click on unrevealed
+                if self.grid[coord_x][coord_y] < 100 {
+                    self.grid[coord_x][coord_y] += 100;
+                    if self.grid[coord_x][coord_y] == 110 {
                         self.playing_status = false;
                         self.show_bombs_fail();
                     }
-                    if self.grid[coord_x][coord_y] == 0 {
+                    if self.grid[coord_x][coord_y] == 100 {
                         if !coords_of_zeroes.contains(&(coord_x, coord_y)){
                             coords_of_zeroes.push((coord_x, coord_y));
                             stop_loop = false;
                         }
                     }
                 }
-                else if self.grid[coord_x][coord_y] <= 10 {
+
+                // click on already revealed square to show the adjacent ones
+                else if (self.grid[coord_x][coord_y] - 100) <= 10 {
                     mins_and_maxes = space_around_coord(coord_x, coord_y, grid_size);
                     r_min = mins_and_maxes[0];
                     c_min = mins_and_maxes[1];
@@ -190,16 +195,17 @@ impl SweeperOfMines {
         
                     for x in r_min..=r_max {
                         for y in c_min..=c_max {
+                            let curr = self.grid[x][y];
 
-                            if self.grid[x][y] <= 10 {
-                                self.display_grid[x][y] = true;
+                            if curr < 100 {
+                                self.grid[x][y] += 100;
 
-                                if self.grid[x][y] == 10 {
+                                if curr == 10 {
                                     self.playing_status = false;
                                     self.show_bombs_fail();
                                 }
                                 // conintue revealing
-                                else if self.grid[x][y] == 0 {
+                                else if curr == 0 {
                                     if !coords_of_zeroes.contains(&(x, y)){
                                         coords_of_zeroes.push((x, y));
                                         stop_loop = false;
@@ -246,16 +252,17 @@ impl SweeperOfMines {
 impl SweeperOfMines {
     fn set_flag(&mut self, coords:(usize, usize)) {
         //check if square is shown
-        if self.display_grid[coords.0][coords.1] {
+        let mut curr = self.grid[coords.0][coords.1];
+        if curr >= 100 && curr < 120 {
             //nothing
         }
         else {
-            if self.grid[coords.0][coords.1] <= 10 {
-                self.grid[coords.0][coords.1] += 20;
+            if curr <= 10 {
+                self.grid[coords.0][coords.1] += 120;
                 self.bombs_to_cover -= 1;
             }
-            else if self.grid[coords.0][coords.1] >= 20 {
-                self.grid[coords.0][coords.1] -= 20;
+            else if curr >= 120 {
+                self.grid[coords.0][coords.1] -= 120;
                 self.bombs_to_cover += 1;
             }
         }
@@ -333,6 +340,22 @@ fn options_bar(ui: &mut egui::Ui) -> u8 {
     return option;
 }
 
+impl SweeperOfMines {
+    fn check_if_won(&self) -> bool {
+        let max_index = self.grid_size;
+
+        for x in 0..max_index {
+            for y in 0..max_index {
+                if self.grid[x as usize][y as usize] < 10 {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+}
+
+
 impl eframe::App for SweeperOfMines {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -352,7 +375,11 @@ impl eframe::App for SweeperOfMines {
             }
 
             let size_display:i32 = self.grid_size;
-            ui.heading(format!("Minesweeper: {}x{};\tBombs to cover:{};\tAlive?: {}", size_display, size_display, self.bombs_to_cover, self.playing_status));
+            let mut text_for_heading = format!("Minesweeper: {}x{};\tBombs to cover:{};\tAlive?: {}", size_display, size_display, self.bombs_to_cover, self.playing_status);
+            if self.victory_status {
+                text_for_heading = format!("You won! Congratulations!");
+            }
+            ui.heading(text_for_heading);
 
             ui.vertical(|ui| {
                 for row in 0..size_display {
@@ -373,14 +400,13 @@ impl eframe::App for SweeperOfMines {
                             if self.playing_status {
                                 if response.clicked(){
                                     self.adjacent_changes((row as usize, col as usize), true);
-                                    println!("Click triggered!");
+                                    self.victory_status = self.check_if_won();
+                                    
                                 }
                                 else if response.secondary_clicked() {
                                     self.set_flag((row as usize, col as usize));
-                                    println!("Right click triggered!");
                                 }
                             }
-
                         }
                     });
                 }
